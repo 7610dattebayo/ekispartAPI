@@ -1,0 +1,360 @@
+Option Explicit
+
+'WebAPIへアクセス
+'拡張性を考慮し、WebAPIへのアクセスを共通化
+Private Function KickWebService(ByVal Api As String, ByVal Param As String) As String
+
+    Dim ApiKey As String, Url As String
+    ApiKey = "アクセスキー"
+    Url = "https://api.ekispert.jp/v1/xml/" & Api & "?key=" & ApiKey & Param
+    
+    Dim http As Object
+
+    Set http = CreateObject("MSXML2.XMLHTTP")
+    
+    With http
+        .Open "GET", Url, False
+        .send
+        KickWebService = .responseText
+    End With
+
+End Function
+
+'駅コード探索
+Private Function ParseStationCode(xmldom As MSXML2.DOMDocument60) As Long
+
+    Dim ResultSet As MSXML2.IXMLDOMNode, Point As MSXML2.IXMLDOMNode, Station As MSXML2.IXMLDOMNode
+    Set ResultSet = xmldom.ChildNodes(1)
+    Dim a As Long, b As Long, c As Long, Code As Long
+    Code = 0
+    
+    For a = 0 To ResultSet.ChildNodes.Length - 1
+        Set Point = ResultSet.ChildNodes.Item(a)
+        For b = 0 To Point.ChildNodes.Length - 1
+            If Point.ChildNodes.Item(b).nodeName = "Station" Then
+                Set Station = Point.ChildNodes.Item(b)
+                For c = 0 To Station.ChildNodes.Length - 1
+                    If Station.ChildNodes(c).nodeName = "Type" Then
+                        If Station.ChildNodes(c).nodeTypedValue = "train" Then
+                            Code = Val(Station.Attributes(0).Text)
+                            Exit For
+                        End If
+                    End If
+                Next c
+            End If
+        Next b
+    Next a
+    
+    ParseStationCode = Code
+
+End Function
+
+'片道及び往復運賃の探索
+Private Sub ParseCourseFare(xmldom As MSXML2.DOMDocument60, ByRef Oneway As Long, ByRef Round As Long)
+    
+    Dim ResultSet As MSXML2.IXMLDOMNode, Course As MSXML2.IXMLDOMNode, Price As MSXML2.IXMLDOMNode
+    Set ResultSet = xmldom.ChildNodes(1)
+    Dim a As Long, b As Long, c As Long
+    
+    For a = 0 To ResultSet.ChildNodes.Length - 1
+        Set Course = ResultSet.ChildNodes.Item(a)
+        For b = 0 To Course.ChildNodes.Length - 1
+            If Course.ChildNodes.Item(b).nodeName = "Price" Then
+                Set Price = Course.ChildNodes.Item(b)
+                For c = 0 To Price.Attributes.Length - 1
+                    If Price.Attributes.Item(c).nodeName = "kind" Then
+                        If Price.Attributes.Item(c).nodeTypedValue = "FareSummary" Then
+                            Oneway = Val(Price.ChildNodes.Item(0).nodeTypedValue)
+                            Round = Val(Price.ChildNodes.Item(1).nodeTypedValue)
+                            Exit For
+                        End If
+                    End If
+                Next c
+            End If
+        Next b
+    Next a
+End Sub
+
+'運賃合計額の探索
+Private Sub ParseCourseFare2(xmldom As MSXML2.DOMDocument60, ByRef OnewayFare As Long)
+    
+    Dim ResultSet As MSXML2.IXMLDOMNode, Course As MSXML2.IXMLDOMNode, Price As MSXML2.IXMLDOMNode
+    Set ResultSet = xmldom.ChildNodes(1)
+    Dim a As Long, b As Long, c As Long
+    
+    For a = 0 To ResultSet.ChildNodes.Length - 1
+        Set Course = ResultSet.ChildNodes.Item(a)
+        For b = 0 To Course.ChildNodes.Length - 1
+            If Course.ChildNodes.Item(b).nodeName = "Price" Then
+                Set Price = Course.ChildNodes.Item(b)
+                For c = 0 To Price.Attributes.Length - 1
+                    If Price.Attributes.Item(c).nodeName = "kind" Then
+                        If Price.Attributes.Item(c).nodeTypedValue = "FareSummary" Then
+                            OnewayFare = Val(Price.ChildNodes.Item(0).nodeTypedValue)
+                            Exit For
+                        End If
+                    End If
+                Next c
+            End If
+        Next b
+    Next a
+End Sub
+
+'料金合計額の探索
+Private Sub ParseCourseFare3(xmldom As MSXML2.DOMDocument60, ByRef OnewayCharge As Long)
+    
+    Dim ResultSet As MSXML2.IXMLDOMNode, Course As MSXML2.IXMLDOMNode, Price As MSXML2.IXMLDOMNode
+    Set ResultSet = xmldom.ChildNodes(1)
+    Dim a As Long, b As Long, c As Long
+    
+    For a = 0 To ResultSet.ChildNodes.Length - 1
+        Set Course = ResultSet.ChildNodes.Item(a)
+        For b = 0 To Course.ChildNodes.Length - 1
+            If Course.ChildNodes.Item(b).nodeName = "Price" Then
+                Set Price = Course.ChildNodes.Item(b)
+                For c = 0 To Price.Attributes.Length - 1
+                    If Price.Attributes.Item(c).nodeName = "kind" Then
+                        If Price.Attributes.Item(c).nodeTypedValue = "ChargeSummary" Then
+                            OnewayCharge = Val(Price.ChildNodes.Item(0).nodeTypedValue)
+                            Exit For
+                        End If
+                    End If
+                Next c
+            End If
+        Next b
+    Next a
+End Sub
+
+'新幹線自由席の料金の探索
+Private Sub ParseCourseFare4(xmldom As MSXML2.DOMDocument60, ByRef OnewayCharge As Long)
+    
+    Dim ResultSet As MSXML2.IXMLDOMNode, Course As MSXML2.IXMLDOMNode, Price As MSXML2.IXMLDOMNode, Detail As MSXML2.IXMLDOMNode
+    Set ResultSet = xmldom.ChildNodes(1)
+    Dim a As Long, b As Long, c As Long, d As Long
+    
+    For a = 0 To ResultSet.ChildNodes.Length - 1
+        Set Course = ResultSet.ChildNodes.Item(a)
+        For b = 0 To Course.ChildNodes.Length - 1
+            If Course.ChildNodes.Item(b).nodeName = "Price" Then
+                Set Price = Course.ChildNodes.Item(b)
+                For c = 0 To Price.Attributes.Length - 1
+                    If Price.Attributes.Item(c).nodeName = "selected" Then
+                        If Price.Attributes.Item(c).nodeTypedValue = "false" Then
+                            For d = 0 To Price.ChildNodes.Length - 1
+                                If Price.ChildNodes.Item(d).nodeName = "Name" Then
+                                    If Price.ChildNodes(d).nodeTypedValue = "自由席" Then
+                                        OnewayCharge = Val(Price.ChildNodes.Item(2).nodeTypedValue)
+                                        Exit For
+                                    End If
+                                End If
+                            Next d
+                        End If
+                    End If
+                Next c
+            End If
+        Next b
+    Next a
+End Sub
+
+'新幹線自由席及び新幹線指定席の判別と料金探索
+Private Sub ParseCourseFare5(xmldom As MSXML2.DOMDocument60, ByRef OnewayCharge As Long)
+    
+    Dim ResultSet As MSXML2.IXMLDOMNode, Course As MSXML2.IXMLDOMNode, Price As MSXML2.IXMLDOMNode, Route As MSXML2.IXMLDOMNode, Line As MSXML2.IXMLDOMNode, TypeDetail As MSXML2.IXMLDOMNode
+    Set ResultSet = xmldom.ChildNodes(1)
+    Dim a As Long, b As Long, c As Long, d As Long, e As Long, f As Long, g As Long, h As Long, i As Long, j As Long, k As Long, l As Long, m As Long, n As Long, o As Long, p As Long, q As Long, r As Long, s As Long, t As Long, u As Long, v As Long, w As Long, x As Long, y As Long, z As Long
+    Dim DistanceKirometer As Long, FreeCharge As Long, ReservedCharge As Long
+    
+        For a = 0 To ResultSet.ChildNodes.Length - 1
+            Set Course = ResultSet.ChildNodes.Item(a)
+            For b = 0 To Course.ChildNodes.Length - 1
+                If Course.ChildNodes.Item(b).nodeName = "Route" Then
+                    Set Route = Course.ChildNodes.Item(b)
+                    For c = 0 To Route.ChildNodes.Length - 1
+                        If Route.ChildNodes.Item(c).nodeName = "Line" Then
+                            Set Line = Route.ChildNodes.Item(c)
+                            For d = 0 To Line.ChildNodes.Length - 1
+                                If Line.ChildNodes.Item(d).nodeName = "Type" Then
+                                    Set TypeDetail = Line.ChildNodes.Item(d)
+                                    For e = 0 To TypeDetail.Attributes.Length - 1
+                                        If TypeDetail.Attributes.Item(e).nodeName = "detail" Then
+                                            If TypeDetail.Attributes.Item(e).nodeTypedValue = "shinkansen" Then
+                                                For f = 0 To Line.Attributes.Length - 1
+                                                    If Line.Attributes.Item(f).nodeName = "distance" Then
+                                                        DistanceKirometer = Val(Line.Attributes.Item(f).nodeTypedValue)
+                                                            Exit For
+                                                    End If
+                                                Next f
+                                            End If
+                                        End If
+                                    Next e
+                                End If
+                            Next d
+                        End If
+                    Next c
+                End If
+            Next b
+        Next a
+    
+    If DistanceKirometer >= 500 And DistanceKirometer < 1000 Then
+        
+        For g = 0 To ResultSet.ChildNodes.Length - 1
+            Set Course = ResultSet.ChildNodes.Item(g)
+            For h = 0 To Course.ChildNodes.Length - 1
+                If Course.ChildNodes.Item(h).nodeName = "Price" Then
+                    Set Price = Course.ChildNodes.Item(h)
+                    For i = 0 To Price.Attributes.Length - 1
+                        If Price.Attributes.Item(i).nodeName = "selected" Then
+                            If Price.Attributes.Item(i).nodeTypedValue = "false" Then
+                                For j = 0 To Price.ChildNodes.Length - 1
+                                    If Price.ChildNodes.Item(j).nodeName = "Name" Then
+                                        If Price.ChildNodes(j).nodeTypedValue = "自由席" Then
+                                            FreeCharge = Val(Price.ChildNodes.Item(2).nodeTypedValue)
+                                                Exit For
+                                        End If
+                                    End If
+                                Next j
+                            End If
+                        End If
+                    Next i
+                End If
+            Next h
+        Next g
+                                                    
+        For k = 0 To ResultSet.ChildNodes.Length - 1
+            Set Course = ResultSet.ChildNodes.Item(k)
+            For l = 0 To Course.ChildNodes.Length - 1
+                If Course.ChildNodes.Item(l).nodeName = "Price" Then
+                    Set Price = Course.ChildNodes.Item(l)
+                    For m = 0 To Price.Attributes.Length - 1
+                        If Price.Attributes.Item(m).nodeName = "selected" Then
+                            If Price.Attributes.Item(m).nodeTypedValue = "true" Then
+                                For n = 0 To Price.ChildNodes.Length - 1
+                                    If Price.ChildNodes.Item(n).nodeName = "Name" Then
+                                        If Price.ChildNodes(n).nodeTypedValue = "指定席" Then
+                                            ReservedCharge = Val(Price.ChildNodes.Item(2).nodeTypedValue)
+                                                Exit For
+                                        End If
+                                    End If
+                                Next n
+                            End If
+                        End If
+                    Next m
+                End If
+            Next l
+        Next k
+                                                    
+        For o = 0 To ResultSet.ChildNodes.Length - 1
+            Set Course = ResultSet.ChildNodes.Item(o)
+            For p = 0 To Course.ChildNodes.Length - 1
+                If Course.ChildNodes.Item(p).nodeName = "Price" Then
+                    Set Price = Course.ChildNodes.Item(p)
+                    For q = 0 To Price.Attributes.Length - 1
+                        If Price.Attributes.Item(q).nodeName = "kind" Then
+                            If Price.Attributes.Item(q).nodeTypedValue = "ChargeSummary" Then
+                                OnewayCharge = Val(Price.ChildNodes.Item(0).nodeTypedValue)
+                                OnewayCharge = FreeCharge + (OnewayCharge - ReservedCharge)
+                                    Exit For
+                            End If
+                        End If
+                    Next q
+                End If
+            Next p
+        Next o
+        
+    ElseIf DistanceKirometer >= 1000 Then
+    
+        For r = 0 To ResultSet.ChildNodes.Length - 1
+            Set Course = ResultSet.ChildNodes.Item(r)
+            For s = 0 To Course.ChildNodes.Length - 1
+                If Course.ChildNodes.Item(s).nodeName = "Price" Then
+                    Set Price = Course.ChildNodes.Item(s)
+                    For t = 0 To Price.Attributes.Length - 1
+                        If Price.Attributes.Item(t).nodeName = "kind" Then
+                            If Price.Attributes.Item(t).nodeTypedValue = "ChargeSummary" Then
+                                OnewayCharge = Val(Price.ChildNodes.Item(0).nodeTypedValue)
+                                    Exit For
+                            End If
+                        End If
+                    Next t
+                End If
+            Next s
+        Next r
+    
+    End If
+    
+End Sub
+
+'移動総距離の探索
+Private Sub ParseCourseFare6(xmldom As MSXML2.DOMDocument60, ByRef TotalDistance As Long)
+    
+    Dim ResultSet As MSXML2.IXMLDOMNode, Course As MSXML2.IXMLDOMNode, Route As MSXML2.IXMLDOMNode
+    Set ResultSet = xmldom.ChildNodes(1)
+    Dim a As Long, b As Long, c As Long
+    
+    For a = 0 To ResultSet.ChildNodes.Length - 1
+        Set Course = ResultSet.ChildNodes.Item(a)
+        For b = 0 To Course.ChildNodes.Length - 1
+            If Course.ChildNodes.Item(b).nodeName = "Route" Then
+                Set Route = Course.ChildNodes.Item(b)
+                For c = 0 To Route.Attributes.Length - 1
+                    If Route.Attributes.Item(c).nodeName = "distance" Then
+                        TotalDistance = Val(Route.Attributes.Item(c).nodeTypedValue)
+                            Exit For
+                    End If
+                Next c
+            End If
+        Next b
+    Next a
+End Sub
+
+'探索条件の生成
+Private Function CreateParameter(xmldom As MSXML2.DOMDocument60) As String
+
+    Dim ResultSet As MSXML2.IXMLDOMNode, Condition As MSXML2.IXMLDOMNode
+    Dim a As Long, PrameterCode As String
+    PrameterCode = ""
+    
+    Set ResultSet = xmldom.ChildNodes(1)
+    For a = 0 To ResultSet.ChildNodes.Length - 1
+        If ResultSet.ChildNodes.Item(a).nodeName = "Condition" Then
+            PrameterCode = ResultSet.ChildNodes.Item(a).nodeTypedValue
+                Exit For
+        End If
+    Next a
+    
+    CreateParameter = PrameterCode
+
+End Function
+
+'改行とインデント設定
+Function indent(ByVal xml As String) As String
+Dim writer As MSXML2.MXXMLWriter60
+Dim reader As MSXML2.SAXXMLReader60
+Dim dom As MSXML2.DOMDocument60
+Dim n As MSXML2.IXMLDOMNode
+
+    Set writer = New MSXML2.MXXMLWriter60
+
+    writer.omitXMLDeclaration = True
+    writer.indent = True
+    
+    Set reader = New MSXML2.SAXXMLReader60
+    Set reader.contentHandler = writer
+    reader.Parse xml
+    
+    Set dom = New MSXML2.DOMDocument60
+    dom.LoadXML xml
+    
+    Set n = dom.ChildNodes(0)
+    dom.LoadXML writer.Output
+    
+    If n.nodeName = "xml" And n.NodeType = NODE_PROCESSING_INSTRUCTION Then
+        dom.InsertBefore n, dom.ChildNodes(0)
+    End If
+
+    indent = dom.xml
+    
+End Function
+
+
+
